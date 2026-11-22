@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "aibot",
+  "version": "2.0.0",
+  "description": "Blok teks di halaman manapun → jawaban AI langsung",
+  "permissions": ["storage", "clipboardWrite", "activeTab", "scripting"],
+  "host_permissions": ["https://*.vercel.app/*"],
+  "background": {
+    "service_worker": "background.js",
+    "scripts": ["config.js", "background.js"]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "aibot@ariskaadi.my.id",
+      "strict_min_version": "109.0"
+    }
+  },
+  "commands": {
+    "capture-screenshot": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "Screenshot & tanya AI"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["style.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+node_modules/
+.env
+*.env
+!.env.example
+.vercel/
+coverage/
+aibot-extension.zip
+
+# Config extension berisi URL & API key pribadi
+extension/config.js
+
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
