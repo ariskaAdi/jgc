@@ -26,13 +26,20 @@ export function createApp(config: Config): Express {
   logger.info('gemini keys loaded', { count: apiKeys.length });
 
   const groq = config.groq ? new GroqProvider(config.groq) : null;
-  const textProvider = new ProviderRouter(gemini, groq, logger);
+
+  // Teks:   Gemini (semua key) → Groq
+  // Gambar: Gemini (semua key) → Groq vision (jika GROQ_VISION_MODEL tidak "off")
+  const router = new ProviderRouter(
+    groq ? [gemini, groq] : [gemini],
+    groq?.supportsImages ? [gemini, groq] : [gemini],
+    logger,
+  );
 
   const service = new QuestionService(
     new ModeDetector(),
-    new McqSolver(textProvider),
-    new EssaySolver(textProvider),
-    new ImageSolver(gemini),
+    new McqSolver(router),
+    new EssaySolver(router),
+    new ImageSolver(router),
   );
 
   const gate = new RequestGate(config.requestHoldMs);

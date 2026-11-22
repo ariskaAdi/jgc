@@ -1,22 +1,55 @@
-import type { ProviderSettings } from '../config/Config';
+import type { GroqSettings } from '../config/Config';
 import { AIProviderError } from './AIProviderError';
-import { withTimeout, type TextProvider } from './AIProvider';
+import { withTimeout, type ImageProvider, type TextProvider } from './AIProvider';
+import type { ImageData } from './ImageData';
 
 interface ChatCompletionResponse {
   choices?: { message?: { content?: string } }[];
 }
 
-/** Groq lewat endpoint yang kompatibel dengan OpenAI. Hanya teks. */
-export class GroqProvider implements TextProvider {
+type ChatContent = string | ({ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } })[];
+
+/** Groq lewat endpoint yang kompatibel dengan OpenAI. Teks, dan gambar jika model vision diisi. */
+export class GroqProvider implements TextProvider, ImageProvider {
   readonly name = 'groq';
   private static readonly ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 
+  /**
+   * Parameter tambahan per model untuk mematikan "thinking" agar jawaban cepat dan
+   * tidak berisi blok <think>. `reasoning_effort: "none"` hanya didukung model ini.
+   */
+  private static readonly NO_REASONING: Record<string, Record<string, unknown>> = {
+    'qwen/qwen3.8-27b': { reasoning_effort: 'none' },
+  };
+
   constructor(
-    private readonly settings: ProviderSettings,
+    private readonly settings: GroqSettings,
     private readonly fetchFn: typeof fetch = fetch,
   ) {}
 
-  async complete(prompt: string, signal?: AbortSignal): Promise<string> {
+  get supportsImages(): boolean {
+    return this.settings.visionModel !== null;
+  }
+
+  complete(prompt: string, signal?: AbortSignal): Promise<string> {
+    return this.chat(this.settings.model, prompt, signal);
+  }
+
+  completeWithImage(prompt: string, image: ImageData, signal?: AbortSignal): Promise<string> {
+    const model = this.settings.visionModel;
+    if (!model) return Promise.reject(new AIProviderError(this.name, 'unknown', 'model vision Groq tidak diaktifkan'));
+
+    return this.chat(
+      model,
+      [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: `data:${image.mimeType};base64,${image.base64}` } },
+      ],
+      signal,
+    );
+  }
+
+  private async chat(model: string, content: ChatContent, signal?: AbortSignal): Promise<string> {
     let response: Response;
     try {
       response = await this.fetchFn(GroqProvider.ENDPOINT, {
@@ -26,8 +59,9 @@ export class GroqProvider implements TextProvider {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: this.settings.model,
-          messages: [{ role: 'user', content: prompt }],
+          model,
+          messages: [{ role: 'user', content }],
+          ...GroqProvider.NO_REASONING[model],
         }),
         signal: withTimeout(signal, this.settings.timeoutMs),
       });
@@ -44,8 +78,9 @@ export class GroqProvider implements TextProvider {
     }
 
     const data = (await response.json()) as ChatCompletionResponse;
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) throw new AIProviderError(this.name, 'unknown', 'respons kosong dari Groq');
-    return content;
+    // Jaga-jaga jika model tetap mengirim proses berpikirnya di dalam jawaban
+    const answer = data.choices?.[0]?.message?.content?.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    if (!answer) throw new AIProviderError(this.name, 'unknown', 'respons kosong dari Groq');
+    return answer;
   }
 }

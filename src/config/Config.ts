@@ -6,6 +6,11 @@ export interface ProviderSettings {
   readonly timeoutMs: number;
 }
 
+export interface GroqSettings extends ProviderSettings {
+  /** Model untuk soal gambar; null = Groq tidak dipakai sebagai cadangan screenshot */
+  readonly visionModel: string | null;
+}
+
 export interface GeminiSettings {
   /** Urutan rotasi: GEMINI_API_KEY, lalu GEMINI_API_KEY1, GEMINI_API_KEY2, ... */
   readonly apiKeys: readonly string[];
@@ -27,7 +32,7 @@ export class Config {
   constructor(
     readonly gemini: GeminiSettings,
     /** null = fallback Groq dimatikan */
-    readonly groq: ProviderSettings | null,
+    readonly groq: GroqSettings | null,
     readonly apiKey: string,
     readonly logLevel: LogLevel,
     readonly port: number,
@@ -50,10 +55,12 @@ export class Config {
       timeoutMs: Config.int(env.GEMINI_TIMEOUT_SECONDS, 20) * 1000,
     };
 
-    const groq: ProviderSettings | null = env.GROQ_API_KEY
+    const visionModel = env.GROQ_VISION_MODEL?.trim() || 'qwen/qwen3.8-27b';
+    const groq: GroqSettings | null = env.GROQ_API_KEY
       ? {
           apiKey: env.GROQ_API_KEY,
           model: env.GROQ_MODEL || 'llama-3.1-8b-instant',
+          visionModel: visionModel.toLowerCase() === 'off' ? null : visionModel,
           timeoutMs: Config.int(env.GROQ_TIMEOUT_SECONDS, 10) * 1000,
         }
       : null;

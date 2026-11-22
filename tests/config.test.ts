@@ -37,6 +37,16 @@ describe('Config.fromEnv', () => {
 
   it('mengaktifkan Groq jika GROQ_API_KEY diisi', () => {
     const config = Config.fromEnv({ GEMINI_API_KEY: 'g', API_KEY: 'k', GROQ_API_KEY: 'q', GROQ_TIMEOUT_SECONDS: '10' });
-    expect(config.groq).toEqual({ apiKey: 'q', model: 'llama-3.1-8b-instant', timeoutMs: 10_000 });
+    expect(config.groq).toEqual({
+      apiKey: 'q',
+      model: 'llama-3.1-8b-instant',
+      visionModel: 'qwen/qwen3.8-27b',
+      timeoutMs: 10_000,
+    });
+  });
+
+  it('GROQ_VISION_MODEL=off mematikan cadangan screenshot', () => {
+    const config = Config.fromEnv({ GEMINI_API_KEY: 'g', API_KEY: 'k', GROQ_API_KEY: 'q', GROQ_VISION_MODEL: 'off' });
+    expect(config.groq?.visionModel).toBeNull();
   });
 });

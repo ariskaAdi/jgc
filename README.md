@@ -5,7 +5,7 @@ AI assistant untuk menjawab soal ujian (pilihan ganda & esai), ditulis ulang dar
 - `POST /ask`: soal teks, otomatis mendeteksi pilihan ganda atau esai
 - `POST /ask-image`: soal dari screenshot (Gemini multimodal)
 - `GET /health`: health check
-- Gemini sebagai provider utama, Groq sebagai fallback opsional untuk soal teks
+- Gemini sebagai provider utama (bisa beberapa API key), Groq sebagai fallback opsional untuk soal teks dan screenshot
 - Browser extension (Chrome & Firefox): sorot teks untuk bertanya, atau Ctrl+Shift+Y untuk screenshot
 
 ## Struktur
@@ -20,8 +20,9 @@ src/
   ai/
     AIProvider.ts            Interface TextProvider & ImageProvider
     GeminiProvider.ts        Gemini via @google/genai (teks + gambar)
-    GroqProvider.ts          Groq via endpoint OpenAI-compatible (teks)
-    ProviderRouter.ts        Primary → fallback
+    GeminiKeyPool.ts         Rotasi beberapa API key Gemini saat kuota habis
+    GroqProvider.ts          Groq via endpoint OpenAI-compatible (teks + gambar)
+    ProviderRouter.ts        Urutan fallback, terpisah untuk teks dan gambar
     AIProviderError.ts       Error AI yang sudah dikategorikan (rate_limit, timeout, ...)
     ImageData.ts             Validasi data URL gambar
   solver/
@@ -75,7 +76,7 @@ Error selalu berbentuk `{ "error": "..." }`:
 
 Supaya kuota API tidak terbakar oleh klik ganda atau shortcut yang ditekan berulang:
 
-- **1 request = 1 panggilan AI**, ditambah paling banyak 1 panggilan fallback ke Groq. Beberapa soal pilihan ganda dijawab dalam satu prompt, dan retry otomatis SDK Gemini dimatikan.
+- **1 request = 1 panggilan AI** dalam kondisi normal. Panggilan tambahan hanya terjadi saat gagal: pindah key Gemini (khusus saat kuota habis), lalu Groq. Beberapa soal pilihan ganda dijawab dalam satu prompt, dan retry otomatis SDK Gemini dimatikan.
 - **Lock di server** ([RequestGate](src/http/RequestGate.ts)): `/ask` dan `/ask-image` memakai lock yang sama. Selama satu request diproses, request lain langsung ditolak dengan 429 (tidak diantrekan). Lock dilepas saat request selesai, atau paling lama `REQUEST_HOLD_SECONDS` (default 30 detik). Saat waktu habis, panggilan AI yang masih berjalan ikut dibatalkan dan client menerima 504.
 - **Lock di extension** ([background.js](extension/background.js)): satu request untuk semua tab. Klik "What is this?" atau Ctrl+Shift+Y selama menunggu jawaban akan diabaikan atau ditolak.
 
@@ -93,7 +94,7 @@ Durasi maksimal fungsi diatur 40 detik di [vercel.json](vercel.json).
 
 ### Beberapa API key Gemini
 
-Isi `GEMINI_API_KEY1`, `GEMINI_API_KEY2`, dan seterusnya. [GeminiKeyPool](src/ai/GeminiKeyPool.ts) memakai satu key sampai kuotanya habis (HTTP 429), lalu pindah ke key berikutnya. Key yang habis tidak dicoba lagi sampai kuotanya reset: 60 detik untuk kuota per menit, atau tengah malam waktu Pacific untuk kuota harian. Error selain 429 tidak memicu rotasi. Kalau semua key habis, soal teks lanjut ke Groq (jika diisi).
+Isi `GEMINI_API_KEY1`, `GEMINI_API_KEY2`, dan seterusnya. [GeminiKeyPool](src/ai/GeminiKeyPool.ts) memakai satu key sampai kuotanya habis (HTTP 429), lalu pindah ke key berikutnya. Key yang habis tidak dicoba lagi sampai kuotanya reset: 60 detik untuk kuota per menit, atau tengah malam waktu Pacific untuk kuota harian. Error selain 429 tidak memicu rotasi. Kalau semua key habis, soal lanjut ke Groq (jika `GROQ_API_KEY` diisi): soal teks memakai `GROQ_MODEL`, soal screenshot memakai `GROQ_VISION_MODEL` (default `qwen/qwen3.8-27b`, dengan mode "thinking" dimatikan).
 
 Kuota Gemini dihitung **per project, bukan per key**. Rotasi hanya menambah kuota jika tiap key berasal dari project Google Cloud yang berbeda.
 
@@ -110,7 +111,7 @@ Jika memakai custom domain (bukan `*.vercel.app`), tambahkan domain itu ke `host
 | Fitur versi Go | Di aibot-js |
 |---|---|
 | HTTP API `/ask`, `/ask-image`, `/health` | ✅ Sama, error kini berupa JSON |
-| Gemini + fallback Groq | ✅ Sama |
+| Gemini + fallback Groq (teks saja) | ✅ Ditambah rotasi beberapa key Gemini dan fallback Groq untuk screenshot |
 | Terminal web (CLI + ttyd), riwayat sesi | ❌ Dihapus: tidak bisa berjalan di Vercel |
 | Laporan pemakaian ke Telegram tiap 30 menit | ❌ Dihapus: Vercel tidak menyimpan file dan tidak menjalankan proses terus-menerus. Bisa ditambah lagi dengan Vercel Cron + Upstash Redis bila perlu. |
 | Docker, nginx, deploy SSH | ❌ Diganti Vercel |
